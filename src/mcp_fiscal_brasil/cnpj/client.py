@@ -67,16 +67,20 @@ class CNPJClient:
                 descrição=data["cnae_fiscal_descricao"],
             )
 
+        # A BrasilAPI devolve as chaves sem acento ("codigo", "descricao", "numero");
+        # as variantes acentuadas sao aceitas por compatibilidade com mocks antigos.
         atividades_secundarias = []
         for cnae in data.get("cnaes_secundarios") or []:
-            if cnae.get("código") and cnae.get("descrição"):
+            codigo = cnae.get("codigo", cnae.get("código"))
+            descricao = cnae.get("descricao", cnae.get("descrição"))
+            if codigo and descricao:
                 atividades_secundarias.append(
-                    AtividadeCNAE(código=str(cnae["código"]), descrição=cnae["descrição"])
+                    AtividadeCNAE(código=str(codigo), descrição=str(descricao))
                 )
 
         endereco = Endereco(
             logradouro=data.get("logradouro"),
-            número=data.get("número"),
+            número=data.get("numero", data.get("número")),
             complemento=data.get("complemento"),
             bairro=data.get("bairro"),
             municipio=data.get("municipio"),

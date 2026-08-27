@@ -403,6 +403,7 @@ Todas as variáveis são opcionais. O servidor funciona sem nenhuma configuraç�
 | `MCP_FISCAL_LOG_LEVEL` | Nível de log: `DEBUG`, `INFO`, `WARNING` | `INFO` |
 | `BRASILAPI_BASE_URL` | URL base da BrasilAPI (para ambientes customizados) | `https://brasilapi.com.br/api` |
 | `HTTP_TIMEOUT` | Timeout em segundos para chamadas HTTP | `30` |
+| `MCP_FISCAL_TABELAS_DB` | Caminho de um banco SQLite de tabelas (NCM/CEST) gerado por `scripts/build_tabelas_db.py`, usado no lugar do banco de amostra do pacote | banco bundled |
 
 ---
 

@@ -14,6 +14,7 @@ execute: python scripts/build_tabelas_db.py --tipi tipi.csv --cest cest.csv
 from __future__ import annotations
 
 import importlib.resources
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -1765,9 +1766,25 @@ _DB_CONN: sqlite3.Connection | None = None
 
 
 def _get_db_path() -> Path:
-    """Retorna o caminho do banco SQLite bundled."""
+    """Retorna o caminho do banco SQLite de tabelas (NCM/CEST).
+
+    Ordem de resolução:
+    1. variável de ambiente ``MCP_FISCAL_TABELAS_DB`` apontando para um banco gerado
+       por ``scripts/build_tabelas_db.py`` (ex.: TIPI completa) fora do pacote;
+    2. banco bundled no pacote (amostra).
+    """
     global _DB_PATH
     if _DB_PATH is None:
+        override = os.environ.get("MCP_FISCAL_TABELAS_DB", "").strip()
+        if override:
+            candidato = Path(override).expanduser()
+            if candidato.is_file():
+                logger.info("tabelas_db_override", path=str(candidato))
+                _DB_PATH = candidato
+                return _DB_PATH
+            logger.warning(
+                "tabelas_db_override_ignorado", path=override, motivo="arquivo inexistente"
+            )
         try:
             # Tenta localizar via importlib.resources (instalado como pacote)
             ref = importlib.resources.files("mcp_fiscal_brasil.tabelas.data").joinpath(

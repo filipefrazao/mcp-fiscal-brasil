@@ -464,3 +464,39 @@ class TestRegister:
         from mcp_fiscal_brasil.tabelas import register
 
         assert callable(register)
+
+
+class TestCaminhoDoBanco:
+    """MCP_FISCAL_TABELAS_DB permite usar um banco completo gerado fora do pacote."""
+
+    @staticmethod
+    def _reset() -> None:
+        from mcp_fiscal_brasil.tabelas import loader
+
+        if loader._DB_CONN is not None:
+            loader._DB_CONN.close()
+        loader._DB_CONN = None
+        loader._DB_PATH = None
+
+    def test_env_aponta_para_banco_externo(self, monkeypatch, tmp_path) -> None:
+        from mcp_fiscal_brasil.tabelas import loader
+
+        externo = tmp_path / "tabelas_full.db"
+        externo.write_bytes(b"")
+        monkeypatch.setenv("MCP_FISCAL_TABELAS_DB", str(externo))
+        self._reset()
+        try:
+            assert loader._get_db_path() == externo
+        finally:
+            self._reset()
+
+    def test_env_invalida_cai_no_bundled(self, monkeypatch, tmp_path) -> None:
+        from mcp_fiscal_brasil.tabelas import loader
+
+        monkeypatch.setenv("MCP_FISCAL_TABELAS_DB", str(tmp_path / "nao-existe.db"))
+        self._reset()
+        try:
+            assert loader._get_db_path().name == "tabelas_fiscais.db"
+            assert loader._get_db_path() != tmp_path / "nao-existe.db"
+        finally:
+            self._reset()

@@ -5,6 +5,64 @@ from lxml import etree
 from ..shared.xml_utils import parse_xml
 from .schemas import EventoESocial, ValidacaoESocialResponse
 
+# Nome do elemento raiz de cada evento (leiaute S-1.x) -> código do evento.
+EVENTO_POR_ELEMENTO: dict[str, str] = {
+    "evtInfoEmpregador": "S-1000",
+    "evtTabEstab": "S-1005",
+    "evtTabRubrica": "S-1010",
+    "evtTabLotacao": "S-1020",
+    "evtTabCargo": "S-1030",
+    "evtTabCarreira": "S-1035",
+    "evtTabFuncao": "S-1040",
+    "evtTabHorTur": "S-1050",
+    "evtTabAmbiente": "S-1060",
+    "evtTabProcesso": "S-1070",
+    "evtTabOperPort": "S-1080",
+    "evtRemun": "S-1200",
+    "evtRmnRPPS": "S-1202",
+    "evtBenPrRP": "S-1207",
+    "evtPgtos": "S-1210",
+    "evtComProd": "S-1260",
+    "evtContratAvNP": "S-1270",
+    "evtInfoComplPer": "S-1280",
+    "evtTotConting": "S-1295",
+    "evtReabreEvPer": "S-1298",
+    "evtFechaEvPer": "S-1299",
+    "evtAdmPrelim": "S-2190",
+    "evtAdmissao": "S-2200",
+    "evtAltCadastral": "S-2205",
+    "evtAltContratual": "S-2206",
+    "evtCAT": "S-2210",
+    "evtMonit": "S-2220",
+    "evtToxic": "S-2221",
+    "evtAfastTemp": "S-2230",
+    "evtCessao": "S-2231",
+    "evtExpRisco": "S-2240",
+    "evtAvPrevio": "S-2250",
+    "evtConvInterm": "S-2260",
+    "evtReintegr": "S-2298",
+    "evtDeslig": "S-2299",
+    "evtTSVInicio": "S-2300",
+    "evtTSVAltContr": "S-2306",
+    "evtTSVTermino": "S-2399",
+    "evtCdBenefIn": "S-2400",
+    "evtCdBenefAlt": "S-2405",
+    "evtCdBenIn": "S-2410",
+    "evtCdBenAlt": "S-2416",
+    "evtReativBen": "S-2418",
+    "evtCdBenTerm": "S-2420",
+    "evtProcTrab": "S-2500",
+    "evtContProc": "S-2501",
+    "evtExclusao": "S-3000",
+    "evtExcProcTrab": "S-3500",
+    "evtBasesTrab": "S-5001",
+    "evtIrrfBenef": "S-5002",
+    "evtBasesFGTS": "S-5003",
+    "evtCS": "S-5011",
+    "evtIrrf": "S-5012",
+    "evtFGTS": "S-5013",
+}
+
 # Catálogo completo dos eventos eSocial (45+ eventos - S-1.0 e posteriores)
 EVENTOS_ESOCIAL: dict[str, EventoESocial] = {
     # Eventos de Tabelas (11 eventos)
@@ -347,6 +405,7 @@ async def validar_evento_esocial(xml_conteudo: str) -> ValidacaoESocialResponse:
     erros: list[str] = []
     avisos: list[str] = []
     evento_codigo = "Desconhecido"
+    elemento: str | None = None
     versão = None
 
     try:
@@ -385,15 +444,17 @@ async def validar_evento_esocial(xml_conteudo: str) -> ValidacaoESocialResponse:
                     f"Elemento raiz '{tag_local}' - não foi possível identificar o evento automaticamente"
                 )
 
-        # Verifica se o evento é conhecido
-        evento_conhecido = any(
-            e.nome.lower().replace(" ", "").find(evento_codigo[3:].lower()) >= 0
-            for e in EVENTOS_ESOCIAL.values()
-        )
-        if not evento_conhecido and evento_codigo != "Desconhecido":
-            avisos.append(
-                f"Evento '{evento_codigo}' não encontrado no catálogo de eventos conhecidos"
-            )
+        # Resolve o nome do elemento (evtXxx) para o código do evento (S-XXXX)
+        if evento_codigo != "Desconhecido":
+            elemento = evento_codigo
+            codigo_resolvido = EVENTO_POR_ELEMENTO.get(elemento)
+            if codigo_resolvido is not None:
+                evento_codigo = codigo_resolvido
+            else:
+                avisos.append(
+                    f"Elemento '{elemento}' não corresponde a nenhum evento eSocial conhecido "
+                    "(leiaute S-1.x)"
+                )
 
         válido = len(erros) == 0
 
@@ -403,6 +464,7 @@ async def validar_evento_esocial(xml_conteudo: str) -> ValidacaoESocialResponse:
 
     return ValidacaoESocialResponse(
         evento=evento_codigo,
+        elemento=elemento,
         versão=versão,
         válido=válido,
         erros=erros,

@@ -18,7 +18,13 @@ class EventoESocial(BaseModel):
 class ValidacaoESocialResponse(BaseResponse):
     """Resultado da validação de um XML de evento eSocial."""
 
-    evento: str
+    evento: str = Field(
+        description="Código do evento (ex.: S-1000) quando identificado; senão, o nome do elemento."
+    )
+    elemento: str | None = Field(
+        default=None,
+        description="Nome do elemento evtXxx encontrado no XML (ex.: evtInfoEmpregador).",
+    )
     versão: str | None = None
     válido: bool
     erros: list[str] = Field(default_factory=list)

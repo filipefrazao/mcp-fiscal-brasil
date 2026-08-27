@@ -22,6 +22,7 @@ from .agentic import (
     summarize_sped,
     validate_nfe_full,
 )
+from .agentic.schemas import SupplierRiskBatchItem
 from .bcb import _tools as bcb_tools
 from .cep import _tools as cep_tools
 from .certidoes.tools import consultar_certidao_federal, consultar_certidao_fgts
@@ -57,7 +58,13 @@ logger = logging.getLogger(__name__)
 MAX_CNPJS_POR_LOTE = 50
 
 
-def _normalizar_e_validar_cnpjs(cnpjs: list[str]) -> list[str]:
+def _normalizar_e_validar_cnpjs(cnpjs: list[str]) -> tuple[list[str], list[str]]:
+    """Separa o lote em (CNPJs normalizados válidos, entradas inválidas).
+
+    CNPJs inválidos não abortam o lote: viram erro individual no resultado.
+    Só levanta ValueError quando o lote excede o tamanho máximo ou quando
+    nenhum CNPJ é válido.
+    """
     if len(cnpjs) > MAX_CNPJS_POR_LOTE:
         raise ValueError(
             f"Tamanho do lote inválido: recebeu {len(cnpjs)} CNPJs, máximo permitido é "
@@ -73,13 +80,13 @@ def _normalizar_e_validar_cnpjs(cnpjs: list[str]) -> list[str]:
             continue
         normalizados.append(normalizar_cnpj(cnpj))
 
-    if invalidos:
+    if not normalizados:
         raise ValueError(
-            "CNPJ(s) inválido(s) no lote. "
+            "CNPJ(s) inválido(s) no lote: nenhum CNPJ válido. "
             f"Verifique o formato e o dígito verificador: {', '.join(invalidos)}"
         )
 
-    return normalizados
+    return normalizados, invalidos
 
 
 app = FastMCP(
@@ -995,7 +1002,8 @@ async def tool_consultar_empresas_lote(
     """Consulta em lote consolidada de compliance e risco para ate 50 CNPJs.
 
     Para cada CNPJ valido, executa analyze_cnpj_compliance + risk_score_supplier
-    em paralelo. CNPJs com falha retornam erro individual sem abortar o lote.
+    em paralelo. CNPJs com falha ou invalidos retornam erro individual sem abortar
+    o lote; ValueError apenas se nenhum CNPJ for valido ou o lote exceder 50.
 
     Args:
         cnpjs: Lista de CNPJs (max 50), com ou sem formatacao.
@@ -1004,11 +1012,20 @@ async def tool_consultar_empresas_lote(
     Returns:
         dict com resultados por CNPJ e lista de erros individuais.
     """
-    cnpjs_normalizados = _normalizar_e_validar_cnpjs(cnpjs)
+    cnpjs_normalizados, cnpjs_invalidos = _normalizar_e_validar_cnpjs(cnpjs)
     resultado = await consultar_empresas_lote(
         cnpjs_normalizados,
         criterios_estritos=criterios_estritos,
     )
+    for cnpj_invalido in cnpjs_invalidos:
+        mensagem = "CNPJ inválido (formato ou dígito verificador); não consultado"
+        resultado.resultados.append(
+            SupplierRiskBatchItem(
+                cnpj=normalizar_cnpj(cnpj_invalido) or cnpj_invalido, erro=mensagem
+            )
+        )
+        resultado.erros.append(f"{cnpj_invalido}: {mensagem}")
+    resultado.total_consultados = len(cnpjs)
     return resultado.model_dump(mode="json", exclude_none=True)
 
 

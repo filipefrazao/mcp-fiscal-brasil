@@ -12,6 +12,10 @@ logger = get_logger(__name__)
 _settings = Settings()
 
 
+def _bool_ou_none(valor: Any) -> bool | None:
+    return valor if isinstance(valor, bool) else None
+
+
 class CNPJClient:
     """Cliente para busca de dados de CNPJ em fontes publicas."""
 
@@ -113,6 +117,8 @@ class CNPJClient:
             telefone=data.get("ddd_telefone_1"),
             email=data.get("email"),
             qsa=qsa,
+            simples_nacional=_bool_ou_none(data.get("opcao_pelo_simples")),
+            mei=_bool_ou_none(data.get("opcao_pelo_mei")),
             origem="BrasilAPI",
         )
 
@@ -163,5 +169,7 @@ class CNPJClient:
             telefone=data.get("telefone"),
             email=data.get("email"),
             qsa=qsa,
+            simples_nacional=_bool_ou_none((data.get("simples") or {}).get("optante")),
+            mei=_bool_ou_none((data.get("simei") or {}).get("optante")),
             origem="ReceitaWS",
         )

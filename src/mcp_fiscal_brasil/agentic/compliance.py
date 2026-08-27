@@ -94,7 +94,7 @@ async def analyze_cnpj_compliance(cnpj: str) -> ComplianceReport:
 
     cnpj_client = CNPJClient()
     simples_client = SimplesClient()
-    mei_client = MEIClient()
+    mei_client = MEIClient(simples_client=simples_client)
 
     resultados = await asyncio.gather(
         _consultar_seguro(cnpj_client.consultar(cnpj_limpo), "cnpj"),
@@ -133,10 +133,10 @@ async def analyze_cnpj_compliance(cnpj: str) -> ComplianceReport:
         )
     fontes_ok.append(getattr(cnpj_data, "origem", "Receita"))
 
-    # Regime tributário
-    if simples_data is not None:
-        fontes_ok.append("Simples Nacional")
-        if not simples_data.optante and simples_data.optante is not None:
+    # Regime tributário (tri-estado: True/False verificado; None = desconhecido)
+    if simples_data is not None and simples_data.verificado:
+        fontes_ok.append(f"Simples Nacional ({simples_data.fonte or 'fonte pública'})")
+        if simples_data.simples_nacional is False:
             achados.append(
                 ComplianceFinding(
                     categoria="regime_tributario",
@@ -145,8 +145,24 @@ async def analyze_cnpj_compliance(cnpj: str) -> ComplianceReport:
                     detalhe="Empresa não consta como optante do Simples Nacional.",
                 )
             )
+    else:
+        achados.append(
+            ComplianceFinding(
+                categoria="regime_tributario",
+                severidade="baixo",
+                titulo="Regime Simples/MEI não verificado",
+                detalhe=(
+                    "Nenhuma fonte pública confirmou a situação no Simples Nacional/SIMEI; "
+                    "não tratar como 'não optante'."
+                ),
+                recomendacao=(
+                    "Confirmar no portal do Simples Nacional "
+                    "(www8.receita.fazenda.gov.br/SimplesNacional)."
+                ),
+            )
+        )
 
-    if mei_data is not None:
+    if mei_data is not None and mei_data.verificado:
         fontes_ok.append("MEI Receita")
 
     # CNAE - sem flag por enquanto, mas registra como achado informativo

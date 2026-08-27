@@ -547,6 +547,24 @@ ReceitaWS       estaduais municipais Federal  local   local  governamentais
 
 ---
 
+### Populando a TIPI completa (NCM)
+
+O banco SQLite distribuído no pacote (`tabelas/data/tabelas_fiscais.db`) traz apenas uma
+amostra de NCM/CEST. Para carregar a TIPI oficial completa (~10,5 mil NCM):
+
+```bash
+pip install openpyxl  # apenas para a conversão
+curl -L -o tipi.xlsx "https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/legislacao/documentos-e-arquivos/tipi.xlsx"
+python scripts/tipi_xlsx_to_csv.py tipi.xlsx tipi.csv
+python scripts/build_tabelas_db.py --tipi tipi.csv
+```
+
+O conversor descarta posições/subposições sem alíquota própria, converte `NT` em vazio
+(NULL), agrega as exceções "Ex" no campo `ex_tipi` e compõe a descrição com os
+ancestrais quando a linha de 8 dígitos traz só "Outros"/"Outras". A TIPI não informa
+unidade tributável. O CEST completo (Convênio ICMS 92/2015) continua exigindo um CSV
+próprio via `--cest`.
+
 ## 📍 Roadmap
 
 - [x] **v0.1.x** - Consultas CNPJ, CPF, NFe, Simples Nacional e SPED; ~14 tools MCP

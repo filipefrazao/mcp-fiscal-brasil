@@ -26,13 +26,17 @@ async def test_get_empresa_success(client):
             origem="ReceitaWS",
             natureza_juridica="Teste",
         )
-        mock_simples.return_value = SimplesStatus(cnpj="123", simples_nacional=True, mei=True)
+        mock_simples.return_value = SimplesStatus(
+            cnpj="123", simples_nacional=True, mei=True, fonte="BrasilAPI"
+        )
 
         result = await client.get_empresa("123")
         assert result.cnpj == "123"
         assert result.razao_social == "Teste"
         assert result.simples_nacional is True
         assert result.mei is True
+        assert result.regime_verificado is True
+        assert result.regime_fonte == "BrasilAPI"
 
 
 @pytest.mark.asyncio
@@ -63,5 +67,8 @@ async def test_get_empresa_simples_fails(client):
 
         result = await client.get_empresa("123")
         assert result.cnpj == "123"
-        assert result.simples_nacional is False
-        assert result.mei is False
+        # Falha na fonte = desconhecido, nunca "nao optante".
+        assert result.simples_nacional is None
+        assert result.mei is None
+        assert result.regime_verificado is False
+        assert result.regime_fonte is None

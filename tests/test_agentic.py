@@ -289,6 +289,62 @@ async def test_compliance_empresa_baixada_eleva_risco() -> None:
 
 
 @pytest.mark.asyncio
+async def test_compliance_usa_simples_verificado_e_registra_fonte() -> None:
+    from mcp_fiscal_brasil.mei.schemas import MEIStatus
+    from mcp_fiscal_brasil.simples.schemas import SimplesStatus
+
+    with (
+        patch("mcp_fiscal_brasil.agentic.compliance.CNPJClient") as mock_cnpj_class,
+        patch("mcp_fiscal_brasil.agentic.compliance.SimplesClient") as mock_simples_class,
+        patch("mcp_fiscal_brasil.agentic.compliance.MEIClient") as mock_mei_class,
+    ):
+        mock_cnpj_class.return_value = MagicMock(consultar=AsyncMock(return_value=_cnpj_ativo()))
+        mock_simples_class.return_value = MagicMock(
+            get_simples_status=AsyncMock(
+                return_value=SimplesStatus(
+                    cnpj="12345678000190", simples_nacional=False, mei=False, fonte="ReceitaWS"
+                )
+            )
+        )
+        mock_mei_class.return_value = MagicMock(
+            get_mei_status=AsyncMock(
+                return_value=MEIStatus(cnpj="12345678000190", mei=False, simples_nacional=False)
+            )
+        )
+
+        report = await analyze_cnpj_compliance("12.345.678/0001-90")
+
+    assert "Simples Nacional (ReceitaWS)" in report.fontes_consultadas
+    assert "MEI Receita" in report.fontes_consultadas
+    titulos = [a.titulo for a in report.achados]
+    assert "Não optante pelo Simples Nacional" in titulos
+    assert "Regime Simples/MEI não verificado" not in titulos
+
+
+@pytest.mark.asyncio
+async def test_compliance_sinaliza_regime_nao_verificado() -> None:
+    from mcp_fiscal_brasil.simples.schemas import SimplesStatus
+
+    with (
+        patch("mcp_fiscal_brasil.agentic.compliance.CNPJClient") as mock_cnpj_class,
+        patch("mcp_fiscal_brasil.agentic.compliance.SimplesClient") as mock_simples_class,
+        patch("mcp_fiscal_brasil.agentic.compliance.MEIClient") as mock_mei_class,
+    ):
+        mock_cnpj_class.return_value = MagicMock(consultar=AsyncMock(return_value=_cnpj_ativo()))
+        mock_simples_class.return_value = MagicMock(
+            get_simples_status=AsyncMock(return_value=SimplesStatus(cnpj="12345678000190"))
+        )
+        mock_mei_class.return_value = MagicMock(get_mei_status=AsyncMock(side_effect=Exception()))
+
+        report = await analyze_cnpj_compliance("12.345.678/0001-90")
+
+    assert not any(f.startswith("Simples Nacional") for f in report.fontes_consultadas)
+    achado = next(a for a in report.achados if a.categoria == "regime_tributario")
+    assert achado.titulo == "Regime Simples/MEI não verificado"
+    assert achado.severidade == "baixo"
+
+
+@pytest.mark.asyncio
 async def test_compliance_cnpj_invalido_levanta() -> None:
     with pytest.raises(ValueError, match="14 digitos"):
         await analyze_cnpj_compliance("123")

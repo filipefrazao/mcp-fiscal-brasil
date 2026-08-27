@@ -31,11 +31,16 @@ class EmpresaClient:
             # CNPJ é o dado primário, se falhar, propagamos o erro
             raise cnpj_data
 
-        simples_nacional = False
-        mei = False
+        # Tri-estado: None = nenhuma fonte confirmou (não confundir com "não optante").
+        simples_nacional: bool | None = None
+        mei: bool | None = None
+        regime_fonte: str | None = None
+        regime_verificado = False
         if not isinstance(simples_data, BaseException):
             simples_nacional = simples_data.simples_nacional
             mei = simples_data.mei
+            regime_fonte = simples_data.fonte
+            regime_verificado = simples_data.verificado
         else:
             logger.warning("empresa_simples_fetch_failed", cnpj=cnpj, error=str(simples_data))
 
@@ -48,6 +53,8 @@ class EmpresaClient:
             natureza_juridica=cnpj_data.natureza_juridica,
             simples_nacional=simples_nacional,
             mei=mei,
+            regime_fonte=regime_fonte,
+            regime_verificado=regime_verificado,
             atividade_principal=cnpj_data.atividade_principal,
             atividades_secundarias=cnpj_data.atividades_secundarias,
             endereco=cnpj_data.endereco,

@@ -1,3 +1,4 @@
+import unicodedata
 from typing import Any
 
 from mcp_fiscal_brasil._core import FiscalNotFoundError, HTTPClient, get_logger, settings
@@ -6,6 +7,37 @@ from mcp_fiscal_brasil._core.errors import FiscalHTTPError
 from .schemas import CNAEActivity, CNAEClass
 
 logger = get_logger(__name__)
+
+
+def _normalizar_texto(texto: str) -> str:
+    """Remove acentos, normaliza espaços e aplica casefold para comparação textual."""
+    sem_acento = "".join(
+        c for c in unicodedata.normalize("NFKD", texto) if not unicodedata.combining(c)
+    )
+    return " ".join(sem_acento.casefold().split())
+
+
+def _filtrar_por_descricao(itens: list[dict[str, Any]], search: str | None) -> list[dict[str, Any]]:
+    """Filtra itens da API IBGE CNAE pela descrição, localmente.
+
+    A API CNAE v2 do IBGE não oferece busca textual em ``/subclasses`` nem em
+    ``/classes``: qualquer parâmetro de busca é ignorado e a lista completa
+    (1.332 subclasses) é devolvida. Por isso o filtro é aplicado aqui, ignorando
+    acentos e caixa. Todos os termos com 3+ caracteres precisam aparecer na
+    descrição; termos curtos (ex.: "em", "de") são descartados.
+    """
+    if not search:
+        return itens
+    termo = _normalizar_texto(search)
+    if not termo:
+        return itens
+    tokens = [t for t in termo.split() if len(t) >= 3] or [termo]
+    filtrados: list[dict[str, Any]] = []
+    for item in itens:
+        descricao = _normalizar_texto(str(item.get("descricao") or ""))
+        if all(token in descricao for token in tokens):
+            filtrados.append(item)
+    return filtrados
 
 
 def _cnae_class_from_item(item: dict[str, Any]) -> CNAEClass:
@@ -43,14 +75,12 @@ class CNAEClient:
     async def get_activities(self, search: str | None = None) -> list[CNAEActivity]:
         """Consulta subclasses (atividades) do CNAE."""
         logger.info("cnae_get_activities_started", search=search)
-        params = {}
-        if search:
-            params["busca"] = search
 
-        # /subclasses (sem codigo) retorna lista
+        # /subclasses (sem codigo) retorna a lista completa; o IBGE ignora
+        # parametros de busca textual, entao o filtro e aplicado localmente.
         async with self._http_client() as client:
             try:
-                data = await client.get_list("/subclasses", params=params)
+                data = await client.get_list("/subclasses")
             except FiscalHTTPError as exc:
                 if exc.status_code == 404:
                     raise FiscalNotFoundError(
@@ -58,9 +88,13 @@ class CNAEClient:
                     ) from exc
                 raise
 
+        itens = _filtrar_por_descricao(data, search)
+        logger.info(
+            "cnae_get_activities_filtered", search=search, total=len(data), filtrados=len(itens)
+        )
         return [
             CNAEActivity(código=str(item.get("id", "")), descrição=item.get("descricao", ""))
-            for item in data
+            for item in itens
         ]
 
     async def get_activity(self, code: str) -> CNAEActivity:
@@ -85,14 +119,11 @@ class CNAEClient:
     async def get_classes(self, search: str | None = None) -> list[CNAEClass]:
         """Consulta classes do CNAE."""
         logger.info("cnae_get_classes_started", search=search)
-        params = {}
-        if search:
-            params["busca"] = search
 
-        # /classes (sem codigo) retorna lista
+        # /classes (sem codigo) retorna a lista completa; filtro textual e local.
         async with self._http_client() as client:
             try:
-                data = await client.get_list("/classes", params=params)
+                data = await client.get_list("/classes")
             except FiscalHTTPError as exc:
                 if exc.status_code == 404:
                     raise FiscalNotFoundError(
@@ -100,7 +131,7 @@ class CNAEClient:
                     ) from exc
                 raise
 
-        return [_cnae_class_from_item(item) for item in data]
+        return [_cnae_class_from_item(item) for item in _filtrar_por_descricao(data, search)]
 
     async def get_class(self, code: str) -> CNAEClass:
         """Consulta uma classe específica por código."""

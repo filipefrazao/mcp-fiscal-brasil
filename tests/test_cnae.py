@@ -92,3 +92,59 @@ async def test_get_class_not_found(client):
         mock_get.side_effect = FiscalHTTPError("Not found", 404, "http://test")
         with pytest.raises(FiscalNotFoundError):
             await client.get_class("99999")
+
+
+_SUBCLASSES_IBGE = [
+    {"id": "5611201", "descricao": "Restaurantes e similares"},
+    {
+        "id": "5620104",
+        "descricao": (
+            "Fornecimento de alimentos preparados preponderantemente para consumo domiciliar"
+        ),
+    },
+    {"id": "8599604", "descricao": "Treinamento em desenvolvimento profissional e gerencial"},
+]
+
+
+@pytest.mark.asyncio
+async def test_get_activities_filtra_localmente_ignorando_acento_e_caixa(client):
+    """O IBGE ignora parametros de busca textual; o filtro e aplicado localmente."""
+    with patch("mcp_fiscal_brasil._core.http.HTTPClient.get_list") as mock_get:
+        mock_get.return_value = _SUBCLASSES_IBGE
+        result = await client.get_activities("RESTAURANTÉ")
+        assert [a.código for a in result] == ["5611201"]
+        # Nenhum parametro de busca e enviado ao IBGE (seria ignorado).
+        mock_get.assert_awaited_once_with("/subclasses")
+
+
+@pytest.mark.asyncio
+async def test_get_activities_exige_todos_os_termos_relevantes(client):
+    with patch("mcp_fiscal_brasil._core.http.HTTPClient.get_list") as mock_get:
+        mock_get.return_value = _SUBCLASSES_IBGE
+        result = await client.get_activities("treinamento em desenvolvimento profissional")
+        assert [a.código for a in result] == ["8599604"]
+        assert await client.get_activities("treinamento restaurante") == []
+
+
+@pytest.mark.asyncio
+async def test_get_activities_sem_texto_devolve_lista_completa(client):
+    with patch("mcp_fiscal_brasil._core.http.HTTPClient.get_list") as mock_get:
+        mock_get.return_value = _SUBCLASSES_IBGE
+        result = await client.get_activities()
+        assert len(result) == len(_SUBCLASSES_IBGE)
+
+
+@pytest.mark.asyncio
+async def test_get_classes_filtra_localmente(client):
+    with patch("mcp_fiscal_brasil._core.http.HTTPClient.get_list") as mock_get:
+        mock_get.return_value = [
+            {
+                "id": "5611",
+                "descricao": "Restaurantes e outros serviços de alimentação e bebidas",
+                "grupo": {"descricao": "Alimentação", "divisao": {"descricao": "Alimentação"}},
+            },
+            {"id": "6201", "descricao": "Desenvolvimento de programas de computador sob encomenda"},
+        ]
+        result = await client.get_classes("programas de computador")
+        assert [c.código for c in result] == ["6201"]
+        mock_get.assert_awaited_once_with("/classes")

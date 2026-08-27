@@ -42,6 +42,10 @@ async def buscar_cnae(texto: str) -> list[CNAEActivity]:
     """
     Busca atividades econômicas CNAE por texto na descrição.
 
+    A API do IBGE não possui busca textual; a lista completa de subclasses é
+    baixada (com cache) e filtrada localmente, ignorando acentos e caixa. Todos
+    os termos com 3+ caracteres do texto precisam aparecer na descrição.
+
     Args:
         texto: Texto para busca na descrição das atividades (ex: 'software', 'restaurante').
                Máximo de 200 caracteres.

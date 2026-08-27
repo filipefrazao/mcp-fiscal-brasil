@@ -221,8 +221,33 @@ async def test_tool_consultar_empresas_lote_valida_e_repassa_cnpjs() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tool_consultar_empresas_lote_rejeita_cnpjs_invalidos() -> None:
-    with pytest.raises(ValueError, match=r"CNPJ\(s\) inválido\(s\) no lote"):
+async def test_tool_consultar_empresas_lote_isola_cnpjs_invalidos() -> None:
+    retorno = SupplierRiskBatchResult(
+        total_consultados=1,
+        criterios_estritos=False,
+        total_processados=1,
+        resultados=[SupplierRiskBatchItem(cnpj="33000167000101")],
+    )
+    with patch(
+        "mcp_fiscal_brasil.server.consultar_empresas_lote",
+        AsyncMock(return_value=retorno),
+    ) as mock_tool:
+        resposta = await mcp_server.tool_consultar_empresas_lote(
+            ["33.000.167/0001-01", "11.111.111/1111-11"]
+        )
+
+    # Somente o CNPJ valido e consultado; o invalido vira erro individual.
+    mock_tool.assert_awaited_once_with(["33000167000101"], criterios_estritos=False)
+    assert resposta["total_consultados"] == 2
+    assert resposta["total_processados"] == 1
+    assert len(resposta["resultados"]) == 2
+    assert "inválido" in resposta["resultados"][1]["erro"]
+    assert any("11.111.111/1111-11" in erro for erro in resposta["erros"])
+
+
+@pytest.mark.asyncio
+async def test_tool_consultar_empresas_lote_rejeita_lote_sem_cnpj_valido() -> None:
+    with pytest.raises(ValueError, match=r"nenhum CNPJ válido"):
         await mcp_server.tool_consultar_empresas_lote(["12.345.678/0001-90", "11.111.111/1111-11"])
 
 

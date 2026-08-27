@@ -9,6 +9,7 @@ Referência: https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/apis-
 """
 
 import logging
+import ssl
 import time
 from typing import Any
 from urllib.parse import quote
@@ -43,6 +44,16 @@ class NFSeNacionalUnavailableError(RuntimeError):
     que o serviço está temporariamente inacessível e o fallback deve ser acionado
     com motivo de indisponibilidade.
     """
+
+
+def _erro_tls(exc: BaseException) -> bool:
+    """Detecta falha de TLS (inclusive encadeada como causa de erro httpx)."""
+    atual: BaseException | None = exc
+    while atual is not None:
+        if isinstance(atual, ssl.SSLError) or "ssl" in str(atual).lower():
+            return True
+        atual = atual.__cause__ or atual.__context__
+    return False
 
 
 class NFSeNacionalClient:
@@ -96,8 +107,15 @@ class NFSeNacionalClient:
             return response.json()  # type: ignore[no-any-return]
         except NFSeNacionalUnavailableError:
             raise
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, OSError) as exc:
+            # ssl.SSLError e subclasse de OSError; o handshake mTLS da ADN pode
+            # falhar fora do encapsulamento do httpx.
             self.circuit_breaker.record_failure()
+            if _erro_tls(exc):
+                raise NFSeNacionalUnavailableError(
+                    "conexão TLS recusada pela ADN: a API Nacional NFS-e exige certificado "
+                    "digital ICP-Brasil do contribuinte (mTLS), não configurado neste servidor"
+                ) from exc
             raise NFSeNacionalUnavailableError(f"path={path}") from exc
 
     async def consultar_por_chave(self, chave_acesso: str) -> dict[str, Any] | None:

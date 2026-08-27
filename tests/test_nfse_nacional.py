@@ -139,3 +139,21 @@ class TestConsultarNFSeComFallback:
 
         assert resultado["numero"] == "77777"
         assert resultado.get("fonte") == "api_nacional"
+
+
+@pytest.mark.asyncio
+async def test_cliente_traduz_falha_tls_para_mensagem_de_mtls() -> None:
+    """A ADN exige certificado ICP-Brasil (mTLS): falha de TLS vira indisponibilidade explicada."""
+    import ssl
+
+    from mcp_fiscal_brasil.nfse.circuit_breaker import CircuitBreaker
+    from mcp_fiscal_brasil.nfse.client import NFSeNacionalClient, NFSeNacionalUnavailableError
+
+    cliente = NFSeNacionalClient()
+    cliente.circuit_breaker = CircuitBreaker()  # estado limpo, independente do singleton
+    with patch(
+        "httpx.AsyncClient.get",
+        AsyncMock(side_effect=ssl.SSLError(1, "[SSL] record layer failure (_ssl.c:2660)")),
+    ):
+        with pytest.raises(NFSeNacionalUnavailableError, match="ICP-Brasil"):
+            await cliente.consultar_por_chave("35000000000000000000000000000000000000000000")

@@ -16,8 +16,17 @@ class RegistroSPED(BaseModel):
 
 
 class InfoAberturaSPED(BaseModel):
-    """Registro de abertura do arquivo SPED (registro 0000)."""
+    """Registro de abertura do arquivo SPED (registro 0000).
 
+    Os campos são preenchidos conforme o leiaute detectado em ``layout``
+    (EFD-ICMS-IPI, EFD-Contribuicoes, ECD ou ECF); campos que não existem
+    no leiaute ficam ``None``.
+    """
+
+    layout: str | None = Field(
+        default=None,
+        description="Leiaute detectado no registro 0000 (EFD-ICMS-IPI, EFD-Contribuicoes, ECD, ECF).",
+    )
     codigo_versao_leiaute: str | None = None
     tipo_escrituracao: str | None = None
     indicador_situacao: str | None = None
@@ -28,8 +37,10 @@ class InfoAberturaSPED(BaseModel):
     uf: str | None = None
     ie: str | None = None
     cod_municipio: str | None = None
+    im: str | None = None
     suframa: str | None = None
     ind_perfil: str | None = None
+    ind_nat_pj: str | None = None
     ind_ativ: str | None = None
     periodo_inicial: date | None = None
     periodo_final: date | None = None

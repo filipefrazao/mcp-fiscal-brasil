@@ -2,6 +2,12 @@
 
 Calculo simplificado, baseado em premissas publicas e tabelas vigentes em 2025.
 Não substitui parecer de contador. Util para estimativa rápida e direcionamento.
+
+Simples Nacional: aliquota efetiva conforme LC 123/2006, art. 18, par. 1o-A
+(Anexos I, II, III e V na redacao da LC 155/2016), ou seja, aplicando a parcela
+a deduzir de cada faixa sobre a receita bruta acumulada (RBT12). Lucro
+Presumido: presuncoes de 8%/32% (IRPJ) e 12%/32% (CSLL), com adicional de IRPJ
+de 10% sobre o lucro presumido que excede R$ 240 mil/ano.
 """
 
 from __future__ import annotations
@@ -13,6 +19,59 @@ from .schemas import TaxRegimeComparison, TaxRegimeOption
 _LIMITE_MEI = 81_000.0
 _LIMITE_SIMPLES = 4_800_000.0
 _LIMITE_LUCRO_PRESUMIDO = 78_000_000.0
+_LIMITE_ADICIONAL_IRPJ_ANUAL = 240_000.0  # R$ 20 mil/mes (R$ 60 mil/trimestre)
+
+# Anexos do Simples Nacional (LC 123/2006, redacao da LC 155/2016):
+# (limite superior da faixa de RBT12, aliquota nominal %, parcela a deduzir R$).
+# Anexo IV (construcao, vigilancia, limpeza, advocacia) nao e coberto pelos
+# setores aceitos por compare_tax_regimes.
+_FAIXAS_SIMPLES: dict[str, list[tuple[float, float, float]]] = {
+    "I": [  # Comercio
+        (180_000, 4.0, 0.0),
+        (360_000, 7.3, 5_940.0),
+        (720_000, 9.5, 13_860.0),
+        (1_800_000, 10.7, 22_500.0),
+        (3_600_000, 14.3, 87_300.0),
+        (4_800_000, 19.0, 378_000.0),
+    ],
+    "II": [  # Industria
+        (180_000, 4.5, 0.0),
+        (360_000, 7.8, 5_940.0),
+        (720_000, 10.0, 13_860.0),
+        (1_800_000, 11.2, 22_500.0),
+        (3_600_000, 14.7, 85_500.0),
+        (4_800_000, 30.0, 720_000.0),
+    ],
+    "III": [  # Servicos com Fator R >= 28%
+        (180_000, 6.0, 0.0),
+        (360_000, 11.2, 9_360.0),
+        (720_000, 13.5, 17_640.0),
+        (1_800_000, 16.0, 35_640.0),
+        (3_600_000, 21.0, 125_640.0),
+        (4_800_000, 33.0, 648_000.0),
+    ],
+    "V": [  # Servicos com Fator R < 28%
+        (180_000, 15.5, 0.0),
+        (360_000, 18.0, 4_500.0),
+        (720_000, 19.5, 9_900.0),
+        (1_800_000, 20.5, 17_100.0),
+        (3_600_000, 23.0, 62_100.0),
+        (4_800_000, 30.5, 540_000.0),
+    ],
+}
+
+
+def _imposto_simples(rbt12: float, anexo: str) -> float:
+    """Imposto anual do Simples = RBT12 x aliquota nominal - parcela a deduzir.
+
+    Equivale a aplicar a aliquota efetiva da LC 123/2006, art. 18, par. 1o-A,
+    sobre toda a receita do ano (aproximacao anual: usa o faturamento anual
+    como RBT12 de todos os meses).
+    """
+    for limite, nominal, deducao in _FAIXAS_SIMPLES[anexo]:
+        if rbt12 <= limite:
+            return max(0.0, rbt12 * nominal / 100 - deducao)
+    raise ValueError(f"RBT12 {rbt12} excede o limite do Simples Nacional")
 
 
 def _calc_simples(
@@ -28,68 +87,16 @@ def _calc_simples(
             "Faturamento excede o limite anual do Simples Nacional (R$ 4,8 milhoes).",
         )
 
-    # Aliquotas efetivas simplificadas por anexo (médias por faixa)
     if setor == "comércio":
-        # Anexo I - alíquota efetiva média
-        if faturamento <= 180_000:
-            alíquota = 4.0
-        elif faturamento <= 360_000:
-            alíquota = 7.3
-        elif faturamento <= 720_000:
-            alíquota = 9.5
-        elif faturamento <= 1_800_000:
-            alíquota = 10.7
-        elif faturamento <= 3_600_000:
-            alíquota = 14.3
-        else:
-            alíquota = 19.0
+        anexo = "I"
     elif setor == "indústria":
-        # Anexo II - 0.5pp acima do comércio em geral
-        if faturamento <= 180_000:
-            alíquota = 4.5
-        elif faturamento <= 360_000:
-            alíquota = 7.8
-        elif faturamento <= 720_000:
-            alíquota = 10.0
-        elif faturamento <= 1_800_000:
-            alíquota = 11.2
-        elif faturamento <= 3_600_000:
-            alíquota = 14.7
-        else:
-            alíquota = 30.0
-    else:  # serviços
-        # Anexo III ou V conforme Fator R (folha / faturamento >= 0.28)
+        anexo = "II"
+    else:  # serviços: Anexo III ou V conforme Fator R (folha / faturamento >= 0.28)
         fator_r = (folha or 0) / faturamento if faturamento > 0 else 0
-        if fator_r >= 0.28:
-            # Anexo III
-            if faturamento <= 180_000:
-                alíquota = 6.0
-            elif faturamento <= 360_000:
-                alíquota = 11.2
-            elif faturamento <= 720_000:
-                alíquota = 13.5
-            elif faturamento <= 1_800_000:
-                alíquota = 16.0
-            elif faturamento <= 3_600_000:
-                alíquota = 21.0
-            else:
-                alíquota = 33.0
-        else:
-            # Anexo V (serviços sem folha relevante)
-            if faturamento <= 180_000:
-                alíquota = 15.5
-            elif faturamento <= 360_000:
-                alíquota = 18.0
-            elif faturamento <= 720_000:
-                alíquota = 19.5
-            elif faturamento <= 1_800_000:
-                alíquota = 20.5
-            elif faturamento <= 3_600_000:
-                alíquota = 23.0
-            else:
-                alíquota = 30.5
+        anexo = "III" if fator_r >= 0.28 else "V"
 
-    imposto = faturamento * alíquota / 100
+    imposto = _imposto_simples(faturamento, anexo)
+    alíquota = round(imposto / faturamento * 100, 2)
     return True, alíquota, imposto, None
 
 
@@ -103,14 +110,19 @@ def _calc_lucro_presumido(
             None,
             "Faturamento excede o limite anual do Lucro Presumido (R$ 78 milhoes).",
         )
-    # Presuncao de lucro
+    # Presuncao de lucro (Lei 9.249/1995, arts. 15 e 20): IRPJ 8% comercio/industria
+    # e 32% servicos; CSLL 12% comercio/industria e 32% servicos.
     if setor == "serviços":
-        presuncao = 0.32
+        presuncao_irpj = 0.32
+        presuncao_csll = 0.32
     else:
-        presuncao = 0.08
-    base_irpj = faturamento * presuncao
+        presuncao_irpj = 0.08
+        presuncao_csll = 0.12
+    base_irpj = faturamento * presuncao_irpj
     irpj = base_irpj * 0.15
-    csll = base_irpj * 0.09
+    # Adicional de IRPJ: 10% sobre o lucro presumido que excede R$ 60 mil/trimestre.
+    adicional = max(0.0, base_irpj - _LIMITE_ADICIONAL_IRPJ_ANUAL) * 0.10
+    csll = faturamento * presuncao_csll * 0.09
     # PIS+COFINS regime cumulativo
     pis_cofins = faturamento * 0.0365
     # ISS estimado (serviços) ou ICMS estimado (comércio/indústria)
@@ -118,7 +130,7 @@ def _calc_lucro_presumido(
         outros = faturamento * 0.05  # ISS medio
     else:
         outros = faturamento * 0.12  # ICMS medio com beneficios
-    total = irpj + csll + pis_cofins + outros
+    total = irpj + adicional + csll + pis_cofins + outros
     aliquota_efetiva = total / faturamento * 100
     return True, aliquota_efetiva, total, None
 
@@ -240,6 +252,10 @@ def compare_tax_regimes(
 
     obs = (
         "Estimativa simplificada usando tabelas publicas vigentes em 2025. "
+        "Simples Nacional: aliquota efetiva dos Anexos I/II/III/V com parcela a deduzir "
+        "(LC 123/2006, art. 18, par. 1o-A), tomando o faturamento anual como RBT12. "
+        "Lucro Presumido: presuncoes de 8%/32% (IRPJ) e 12%/32% (CSLL) com adicional de "
+        "IRPJ de 10% acima de R$ 240 mil/ano de lucro presumido. "
         "Considera presuncoes médias de ICMS/ISS. Não inclui beneficios estaduais nem "
         "regimes especiais. Consulte contador para decisão final."
     )

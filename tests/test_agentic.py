@@ -353,6 +353,39 @@ def test_calc_simples_fator_r_servicos() -> None:
     assert aliq_alto < aliq_baixo
 
 
+def test_calc_simples_aplica_parcela_a_deduzir() -> None:
+    # Anexo III, 4a faixa: (1.200.000 x 16% - 35.640) / 1.200.000 = 13,03%
+    aplicavel, aliq, imposto, motivo = _calc_simples(1_200_000, "serviços", 360_000)
+    assert aplicavel is True
+    assert motivo is None
+    assert aliq == pytest.approx(13.03, abs=0.01)
+    assert imposto == pytest.approx(156_360, abs=1)
+
+
+def test_calc_simples_primeira_faixa_sem_deducao() -> None:
+    _, aliq, imposto, _ = _calc_simples(150_000, "comércio", None)
+    assert aliq == pytest.approx(4.0)
+    assert imposto == pytest.approx(6_000)
+
+
+def test_calc_simples_anexo_v_sem_fator_r() -> None:
+    # Anexo V, 3a faixa: (500.000 x 19,5% - 9.900) / 500.000 = 17,52%
+    _, aliq, _imposto, _ = _calc_simples(500_000, "serviços", 10_000)
+    assert aliq == pytest.approx(17.52, abs=0.01)
+
+
+def test_calc_lucro_presumido_csll_12_e_adicional_irpj() -> None:
+    # comercio 2 mi: IRPJ 8% -> 160k x 15% = 24k (sem adicional);
+    # CSLL 12% -> 240k x 9% = 21,6k; PIS/COFINS 3,65% = 73k; ICMS 12% = 240k
+    _, _aliq_c, imp_c, _ = _calc_lucro_presumido(2_000_000, "comércio")
+    assert imp_c == pytest.approx(24_000 + 21_600 + 73_000 + 240_000)
+    # servicos 1,2 mi: base 384k -> IRPJ 57,6k + adicional (384k - 240k) x 10% = 14,4k;
+    # CSLL 384k x 9% = 34,56k; PIS/COFINS 43,8k; ISS 60k
+    _, aliq_s, imp_s, _ = _calc_lucro_presumido(1_200_000, "serviços")
+    assert imp_s == pytest.approx(57_600 + 14_400 + 34_560 + 43_800 + 60_000)
+    assert aliq_s == pytest.approx(17.53, abs=0.01)
+
+
 def test_calc_lucro_presumido_aplicavel() -> None:
     aplicavel, _aliq, imp, motivo = _calc_lucro_presumido(2_000_000, "comércio")
     assert aplicavel is True
